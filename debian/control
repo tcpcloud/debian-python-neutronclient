@@ -1,7 +1,8 @@
 Source: python-neutronclient
 Section: python
 Priority: extra
-Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Maintainer: Filip Pytloun <filip.pytloun@tcpcloud.eu>
+#Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
 XSBC-Original-Maintainer: Chuck Short <zulcss@buntu.com>
 Build-Depends:
  cliff-tablib,
@@ -31,8 +32,10 @@ Build-Depends:
 Standards-Version: 3.9.4
 X-Python-Version: >= 2.6
 Homepage: http://launchpad.net/python-quantumclient
-Vcs-Browser: http://bazaar.launchpad.net/~ubuntu-server-dev/python-neutronclient/juno/files
-Vcs-Bzr: https://code.launchpad.net/~ubuntu-server-dev/python-neutronclient/juno
+Vcs-Browser: https://git.tcpcloud.eu/packages/python-neutronclient
+Vcs-Git: https://git.tcpcloud.eu/packages/python-neutronclient.git
+#Vcs-Browser: http://bazaar.launchpad.net/~ubuntu-server-dev/python-neutronclient/juno/files
+#Vcs-Bzr: https://code.launchpad.net/~ubuntu-server-dev/python-neutronclient/juno
 XS-Testsuite: autopkgtest
 
 Package: python-neutronclient

@@ -1,3 +1,9 @@
+python-neutronclient (1:2.3.8-0ubuntu1~cloud0tcp1) trusty; urgency=medium
+
+  * apply Juniper patch for opencontrail
+
+ -- Filip Pytloun <filip.pytloun@tcpcloud.eu>  Thu, 30 Jul 2015 09:44:08 +0200
+
 python-neutronclient (1:2.3.8-0ubuntu1~cloud0) trusty-juno; urgency=medium
 
   * New upstream release for the Ubuntu Cloud Archive.

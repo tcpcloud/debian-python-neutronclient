@@ -1,0 +1,492 @@
+From: Atul Moghe <amoghe@juniper.net>
+Date: Tue, 7 Oct 2014 15:11:13 -0700
+Subject: adding contrail-extentions patch in python-neutronclient for
+ contrail/juno
+
+Conflicts:
+	neutronclient/shell.py
+	resolved by removing gettextutils and strutils (same as
+	openstack/master)
+
+Conflicts:
+	neutronclient/shell.py
+---
+ neutronclient/neutron/v2_0/ipam.py          |  63 ++++++++++++
+ neutronclient/neutron/v2_0/policy.py        |  61 ++++++++++++
+ neutronclient/neutron/v2_0/vpcroutetable.py | 123 +++++++++++++++++++++++
+ neutronclient/shell.py                      |  21 ++++
+ neutronclient/v2_0/client.py                | 147 ++++++++++++++++++++++++++++
+ 5 files changed, 415 insertions(+)
+ create mode 100644 neutronclient/neutron/v2_0/ipam.py
+ create mode 100644 neutronclient/neutron/v2_0/policy.py
+ create mode 100644 neutronclient/neutron/v2_0/vpcroutetable.py
+
+diff --git a/neutronclient/neutron/v2_0/ipam.py b/neutronclient/neutron/v2_0/ipam.py
+new file mode 100644
+index 0000000..135c071
+--- /dev/null
++++ b/neutronclient/neutron/v2_0/ipam.py
+@@ -0,0 +1,63 @@
++import argparse
++import logging
++
++from neutronclient.neutron.v2_0 import CreateCommand
++from neutronclient.neutron.v2_0 import DeleteCommand
++from neutronclient.neutron.v2_0 import ListCommand
++from neutronclient.neutron.v2_0 import UpdateCommand
++from neutronclient.neutron.v2_0 import ShowCommand
++
++
++class ListIpam(ListCommand):
++    """List IP Address Management information that belong to a given tenant."""
++
++    resource = 'ipam'
++    log = logging.getLogger(__name__ + '.ListIpam')
++    _formatters = {}
++    list_columns = ['id', 'name']
++
++
++class ShowIpam(ShowCommand):
++    """Show information of a given IPAM."""
++
++    resource = 'ipam'
++    log = logging.getLogger(__name__ + '.ShowIpam')
++
++
++class CreateIpam(CreateCommand):
++    """Create an IPAM for a given tenant."""
++
++    resource = 'ipam'
++    log = logging.getLogger(__name__ + '.CreateIpam')
++
++    def add_known_arguments(self, parser):
++        parser.add_argument(
++            '--method',
++            default='fixed',
++            help='Set IP Address Management Scheme')
++        parser.add_argument(
++            'name', metavar='name',
++            help='Name of IPAM to create')
++
++    def args2body(self, parsed_args):
++        body = {'ipam': {
++            'name': parsed_args.name,
++            'mgmt': {'method': parsed_args.method}, },
++               }
++        if parsed_args.tenant_id:
++            body['ipam'].update({'tenant_id': parsed_args.tenant_id})
++        return body
++
++
++class DeleteIpam(DeleteCommand):
++    """Delete a given IPAM."""
++
++    log = logging.getLogger(__name__ + '.DeleteIpam')
++    resource = 'ipam'
++
++
++class UpdateIpam(UpdateCommand):
++    """Update IPAM's information."""
++
++    log = logging.getLogger(__name__ + '.UpdateIpam')
++    resource = 'ipam'
+diff --git a/neutronclient/neutron/v2_0/policy.py b/neutronclient/neutron/v2_0/policy.py
+new file mode 100644
+index 0000000..769a747
+--- /dev/null
++++ b/neutronclient/neutron/v2_0/policy.py
+@@ -0,0 +1,61 @@
++import argparse
++import logging
++
++from neutronclient.neutron.v2_0 import CreateCommand
++from neutronclient.neutron.v2_0 import DeleteCommand
++from neutronclient.neutron.v2_0 import ListCommand
++from neutronclient.neutron.v2_0 import UpdateCommand
++from neutronclient.neutron.v2_0 import ShowCommand
++
++
++class ListPolicy(ListCommand):
++    """List Network Policy information that belong to a given tenant."""
++
++    resource = 'policy'
++    log = logging.getLogger(__name__ + '.ListPolicy')
++    _formatters = {}
++    list_columns = ['id', 'name']
++
++
++class ShowPolicy(ShowCommand):
++    """Show information of a given Policy."""
++
++    resource = 'policy'
++    log = logging.getLogger(__name__ + '.ShowPolicy')
++
++
++class CreatePolicy(CreateCommand):
++    """Create an Policy for a given tenant."""
++
++    resource = 'policy'
++    log = logging.getLogger(__name__ + '.CreatePolicy')
++
++    def add_known_arguments(self, parser):
++        parser.add_argument(
++            '--method',
++            default='fixed',
++            help='Set Network Policy parameters')
++        parser.add_argument(
++            'name', metavar='name',
++            help='Name of Policy to create')
++
++    def args2body(self, parsed_args):
++        body = {'policy': {
++            'name': parsed_args.name, }, }
++        if parsed_args.tenant_id:
++            body['policy'].update({'tenant_id': parsed_args.tenant_id})
++        return body
++
++
++class DeletePolicy(DeleteCommand):
++    """Delete a given Policy."""
++
++    log = logging.getLogger(__name__ + '.DeletePolicy')
++    resource = 'policy'
++
++
++class UpdatePolicy(UpdateCommand):
++    """Update Policy's information."""
++
++    log = logging.getLogger(__name__ + '.UpdatePolicy')
++    resource = 'policy'
+diff --git a/neutronclient/neutron/v2_0/vpcroutetable.py b/neutronclient/neutron/v2_0/vpcroutetable.py
+new file mode 100644
+index 0000000..9c049f2
+--- /dev/null
++++ b/neutronclient/neutron/v2_0/vpcroutetable.py
+@@ -0,0 +1,123 @@
++# Copyright 2012 OpenStack LLC.
++# All Rights Reserved
++#
++#    Licensed under the Apache License, Version 2.0 (the "License"); you may
++#    not use this file except in compliance with the License. You may obtain
++#    a copy of the License at
++#
++#         http://www.apache.org/licenses/LICENSE-2.0
++#
++#    Unless required by applicable law or agreed to in writing, software
++#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++#    License for the specific language governing permissions and limitations
++#    under the License.
++#
++# vim: tabstop=4 shiftwidth=4 softtabstop=4
++
++import argparse
++import logging
++
++from neutronclient.neutron import v2_0 as neutronv20
++
++
++class ListRouteTable(neutronv20.ListCommand):
++    """List route tables that belong to a given tenant."""
++
++    resource = 'route_table'
++    log = logging.getLogger(__name__ + '.ListRouteTable')
++    list_columns = ['id', 'name', 'description']
++    pagination_support = True
++    sorting_support = True
++
++
++class ShowRouteTable(neutronv20.ShowCommand):
++    """Show information of a given route table."""
++
++    resource = 'route_table'
++    log = logging.getLogger(__name__ + '.ShowRouteTable')
++    allow_names = True
++
++
++class CreateRouteTable(neutronv20.CreateCommand):
++    """Create a route table."""
++
++    resource = 'route_table'
++    log = logging.getLogger(__name__ + '.CreateRouteTable')
++
++    def add_known_arguments(self, parser):
++        parser.add_argument(
++            'name', metavar='NAME',
++            help='Name of route table to create')
++
++    def args2body(self, parsed_args):
++        body = {'route_table': {
++            'name': parsed_args.name}}
++        if parsed_args.tenant_id:
++            body['route_table'].update({'tenant_id': parsed_args.tenant_id})
++        return body
++
++
++class DeleteRouteTable(neutronv20.DeleteCommand):
++    """Delete a given route table."""
++
++    log = logging.getLogger(__name__ + '.DeleteRouteTable')
++    resource = 'route_table'
++    allow_names = True
++
++
++class ListNatInstance(neutronv20.ListCommand):
++    """List nat instances that belong to a given tenant."""
++
++    resource = 'nat_instance'
++    log = logging.getLogger(__name__ + '.ListNatInstance')
++    list_columns = ['id', 'name', 'internal_net', 'external_net']
++    pagination_support = True
++    sorting_support = True
++
++
++class ShowNatInstance(neutronv20.ShowCommand):
++    """Show information of a given nat instance."""
++
++    resource = 'nat_instance'
++    log = logging.getLogger(__name__ + '.ShowNatInstance')
++    allow_names = True
++
++
++class CreateNatInstance(neutronv20.CreateCommand):
++    """Create a nat instance."""
++
++    resource = 'nat_instance'
++    log = logging.getLogger(__name__ + '.CreateNatInstance')
++
++    def add_known_arguments(self, parser):
++        parser.add_argument(
++            'name', metavar='NAME',
++            help='Name of nat instance to create')
++        parser.add_argument(
++            'internal_net', metavar='NETWORK',
++            help='Internal network id ')
++        parser.add_argument(
++            'external_net', metavar='NETWORK',
++            help='External network id ')
++
++    def args2body(self, parsed_args):
++        body = {'nat_instance': {
++            'name': parsed_args.name}}
++        if parsed_args.tenant_id:
++            body['nat_instance'].update({'tenant_id': parsed_args.tenant_id})
++        if parsed_args.internal_net:
++            body['nat_instance'].update({
++                    'internal_net': parsed_args.internal_net})
++        if parsed_args.external_net:
++            body['nat_instance'].update({
++                    'external_net': parsed_args.external_net})
++        return body
++
++
++class DeleteNatInstance(neutronv20.DeleteCommand):
++    """Delete a given nat instance."""
++
++    log = logging.getLogger(__name__ + '.DeleteNatInstance')
++    resource = 'nat_instance'
++    allow_names = True
+diff --git a/neutronclient/shell.py b/neutronclient/shell.py
+index fa73329..656c28f 100644
+--- a/neutronclient/shell.py
++++ b/neutronclient/shell.py
+@@ -68,6 +68,9 @@ from neutronclient.neutron.v2_0.vpn import ikepolicy
+ from neutronclient.neutron.v2_0.vpn import ipsec_site_connection
+ from neutronclient.neutron.v2_0.vpn import ipsecpolicy
+ from neutronclient.neutron.v2_0.vpn import vpnservice
++from neutronclient.neutron.v2_0 import ipam
++from neutronclient.neutron.v2_0 import policy
++from neutronclient.neutron.v2_0 import vpcroutetable
+ from neutronclient.openstack.common.gettextutils import _
+ from neutronclient.openstack.common import strutils
+ from neutronclient.version import __version__
+@@ -295,6 +298,24 @@ COMMAND_V2 = {
+     'nec-packet-filter-create': packetfilter.CreatePacketFilter,
+     'nec-packet-filter-update': packetfilter.UpdatePacketFilter,
+     'nec-packet-filter-delete': packetfilter.DeletePacketFilter,
++    'ipam-list': ipam.ListIpam,
++    'ipam-show': ipam.ShowIpam,
++    'ipam-create': ipam.CreateIpam,
++    'ipam-delete': ipam.DeleteIpam,
++    'ipam-update': ipam.UpdateIpam,
++    'policy-list': policy.ListPolicy,
++    'policy-show': policy.ShowPolicy,
++    'policy-create': policy.CreatePolicy,
++    'policy-delete': policy.DeletePolicy,
++    'policy-update': policy.UpdatePolicy,
++    'nat-instance-list': vpcroutetable.ListNatInstance,
++    'nat-instance-show': vpcroutetable.ShowNatInstance,
++    'nat-instance-create': vpcroutetable.CreateNatInstance,
++    'nat-instance-delete': vpcroutetable.DeleteNatInstance,
++    'route-table-list': vpcroutetable.ListRouteTable,
++    'route-table-show': vpcroutetable.ShowRouteTable,
++    'route-table-create': vpcroutetable.CreateRouteTable,
++    'route-table-delete': vpcroutetable.DeleteRouteTable,
+ }
+ 
+ COMMANDS = {'2.0': COMMAND_V2}
+diff --git a/neutronclient/v2_0/client.py b/neutronclient/v2_0/client.py
+index eb84125..dec3e1f 100644
+--- a/neutronclient/v2_0/client.py
++++ b/neutronclient/v2_0/client.py
+@@ -163,6 +163,14 @@ class Client(object):
+     router_path = "/routers/%s"
+     floatingips_path = "/floatingips"
+     floatingip_path = "/floatingips/%s"
++    ipams_path = "/ipams"
++    ipam_path = "/ipams/%s"
++    policys_path = "/policys"
++    policy_path = "/policys/%s"
++    route_tables_path = "/route-tables"
++    route_table_path = "/route-tables/%s"
++    nat_instances_path = "/nat-instances"
++    nat_instance_path = "/nat-instances/%s"
+     security_groups_path = "/security-groups"
+     security_group_path = "/security-groups/%s"
+     security_group_rules_path = "/security-group-rules"
+@@ -464,6 +472,145 @@ class Client(object):
+         return self.delete(self.floatingip_path % (floatingip))
+ 
+     @APIParamsCall
++    def list_ipams(self, **_params):
++        """
++        Fetches a list of all ipams for a tenant
++        """
++        # Pass filters in "params" argument to do_request
++        return self.get(self.ipams_path, params=_params)
++
++    @APIParamsCall
++    def show_ipam(self, ipam, **_params):
++        """
++        Fetches information of a certain ipam
++        """
++        return self.get(self.ipam_path % (ipam), params=_params)
++
++    @APIParamsCall
++    def create_ipam(self, body=None):
++        """
++        Creates a new ipam
++        """
++        return self.post(self.ipams_path, body=body)
++
++    @APIParamsCall
++    def update_ipam(self, ipam, body=None):
++        """
++        Updates an ipam
++        """
++        return self.put(self.ipam_path % (ipam), body=body)
++
++    @APIParamsCall
++    def delete_ipam(self, ipam):
++        """
++        Deletes the specified ipam
++        """
++        return self.delete(self.ipam_path % (ipam))
++
++    @APIParamsCall
++    def list_policys(self, **_params):
++        """
++        Fetches a list of all policys for a tenant
++        """
++        # Pass filters in "params" argument to do_request
++        return self.get(self.policys_path, params=_params)
++
++    @APIParamsCall
++    def show_policy(self, policy, **_params):
++        """
++        Fetches information of a certain policy
++        """
++        return self.get(self.policy_path % (policy), params=_params)
++
++    @APIParamsCall
++    def create_policy(self, body=None):
++        """
++        Creates a new policy
++        """
++        return self.post(self.policys_path, body=body)
++
++    @APIParamsCall
++    def update_policy(self, policy, body=None):
++        """
++        Updates a policy
++        """
++        return self.put(self.policy_path % (policy), body=body)
++
++    @APIParamsCall
++    def delete_policy(self, policy):
++        """
++        Deletes the specified policy
++        """
++        return self.delete(self.policy_path % (policy))
++
++    @APIParamsCall
++    def create_route_table(self, body=None):
++        """
++        Creates a new route table
++        """
++        return self.post(self.route_tables_path, body=body)
++
++    @APIParamsCall
++    def update_route_table(self, route_table, body=None):
++        """
++        Updates a route table
++        """
++        return self.put(self.route_table_path % (route_table), body=body)
++
++    @APIParamsCall
++    def list_route_tables(self, retrieve_all=True, **_params):
++        """
++        Fetches a list of all route tables for a tenant
++        """
++        return self.list('route_tables', self.route_tables_path,
++                         retrieve_all, **_params)
++
++    @APIParamsCall
++    def show_route_table(self, route_table, **_params):
++        """
++        Fetches information of a certain route table
++        """
++        return self.get(self.route_table_path % (route_table),
++                        params=_params)
++
++    @APIParamsCall
++    def delete_route_table(self, route_table):
++        """
++        Deletes the specified route table
++        """
++        return self.delete(self.route_table_path % (route_table))
++
++    @APIParamsCall
++    def create_nat_instance(self, body=None):
++        """
++        Creates a new nat instance
++        """
++        return self.post(self.nat_instances_path, body=body)
++
++    @APIParamsCall
++    def list_nat_instances(self, retrieve_all=True, **_params):
++        """
++        Fetches a list of all nat instances for a tenant
++        """
++        return self.list('nat_instances', self.nat_instances_path,
++                         retrieve_all, **_params)
++
++    @APIParamsCall
++    def show_nat_instance(self, nat_instance, **_params):
++        """
++        Fetches information of a certain nat instance
++        """
++        return self.get(self.nat_instance_path % (nat_instance),
++                        params=_params)
++
++    @APIParamsCall
++    def delete_nat_instance(self, nat_instance):
++        """
++        Deletes the specified nat instance
++        """
++        return self.delete(self.nat_instance_path % (nat_instance))
++
++    @APIParamsCall
+     def create_security_group(self, body=None):
+         """Creates a new security group."""
+         return self.post(self.security_groups_path, body=body)
