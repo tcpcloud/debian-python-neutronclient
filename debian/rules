@@ -1,0 +1,29 @@
+#!/usr/bin/make -f
+
+include /usr/share/openstack-pkg-tools/pkgos.make
+export OSLO_PACKAGE_VERSION=$(VERSION)
+
+%:
+	dh $@ --buildsystem=python_distutils --with python2
+
+ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
+override_dh_auto_test:
+	rm -rf .testrepository
+	testr init
+	set -e && \
+		TEMP_REZ=`mktemp -t` && \
+		PYTHONPATH=$(CURDIR) testr run --subunit | tee $$TEMP_REZ | subunit2pyunit ; \
+		cat $$TEMP_REZ | subunit-filter -s --no-passthrough | subunit-stats ; \
+		rm -f $$TEMP_REZ ;
+	testr slowest
+endif
+
+override_dh_auto_clean:
+	dh_auto_clean -O--buildsystem=python_distutils
+	rm -rf python_neutronclient.egg-info doc/man .testrepository
+
+#override_dh_installman:
+#ifeq (,$(findstring nodocs, $(DEB_BUILD_OPTIONS)))
+#	sphinx-build -b man doc/source doc/man
+#	dh_installman -O--buildsystem=python_distutils
+#endif
