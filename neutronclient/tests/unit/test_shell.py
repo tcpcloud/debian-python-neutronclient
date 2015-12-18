@@ -20,8 +20,8 @@ import re
 import sys
 
 import fixtures
-import httpretty
 from mox3 import mox
+import requests_mock
 import six
 import testtools
 from testtools import matchers
@@ -71,8 +71,8 @@ class ShellTest(testtools.TestCase):
         clean_env = {}
         _old_env, os.environ = os.environ, clean_env.copy()
         try:
-            sys.stdout = six.StringIO()
-            sys.stderr = six.StringIO()
+            sys.stdout = six.moves.cStringIO()
+            sys.stderr = six.moves.cStringIO()
             _shell = openstack_shell.NeutronShell('2.0')
             _shell.run(argstr.split())
         except SystemExit:
@@ -127,6 +127,29 @@ class ShellTest(testtools.TestCase):
             matchers.MatchesRegex(required))
         self.assertFalse(stderr)
 
+    def test_bash_completion_in_outputs_of_help_command(self):
+        help_text, stderr = self.shell('help')
+        self.assertFalse(stderr)
+        completion_cmd = "bash-completion"
+        completion_help_str = ("Prints all of the commands and options "
+                               "for bash-completion.")
+        self.assertIn(completion_cmd, help_text)
+        self.assertIn(completion_help_str, help_text)
+
+    def test_bash_completion_command(self):
+        # just check we have some output
+        required = [
+            '.*--tenant_id',
+            '.*--client-certificate',
+            '.*help',
+            '.*gateway-device-create',
+            '.*--dns-nameserver']
+        help_text, stderr = self.shell('neutron bash-completion')
+        self.assertFalse(stderr)
+        for r in required:
+            self.assertThat(help_text,
+                            matchers.MatchesRegex(r, re.DOTALL | re.MULTILINE))
+
     def test_unknown_auth_strategy(self):
         self.useFixture(fixtures.FakeLogger(level=logging.DEBUG))
         stdout, stderr = self.shell('--os-auth-strategy fake quota-list')
@@ -134,12 +157,12 @@ class ShellTest(testtools.TestCase):
         self.assertEqual('You must provide a service URL via '
                          'either --os-url or env[OS_URL]', stderr.strip())
 
-    @httpretty.activate
-    def test_auth(self):
+    @requests_mock.Mocker()
+    def test_auth(self, mrequests):
         # emulate Keystone version discovery
-        httpretty.register_uri(httpretty.GET,
+        mrequests.register_uri('GET',
                                auth.V3_URL,
-                               body=auth.V3_VERSION_ENTRY)
+                               json=auth.V3_VERSION_ENTRY)
 
         neutron_shell = openstack_shell.NeutronShell('2.0')
         self.addCleanup(self.mox.UnsetStubs)
@@ -169,12 +192,12 @@ class ShellTest(testtools.TestCase):
         neutron_shell.run(cmdline.split())
         self.mox.VerifyAll()
 
-    @httpretty.activate
-    def test_auth_cert_and_key(self):
+    @requests_mock.Mocker()
+    def test_auth_cert_and_key(self, mrequests):
         # emulate Keystone version discovery
-        httpretty.register_uri(httpretty.GET,
+        mrequests.register_uri('GET',
                                auth.V3_URL,
-                               body=auth.V3_VERSION_ENTRY)
+                               json=auth.V3_VERSION_ENTRY)
 
         neutron_shell = openstack_shell.NeutronShell('2.0')
         self.addCleanup(self.mox.UnsetStubs)
@@ -205,12 +228,12 @@ class ShellTest(testtools.TestCase):
         neutron_shell.run(cmdline.split())
         self.mox.VerifyAll()
 
-    @httpretty.activate
-    def test_v2_auth(self):
+    @requests_mock.Mocker()
+    def test_v2_auth(self, mrequests):
         # emulate Keystone version discovery
-        httpretty.register_uri(httpretty.GET,
+        mrequests.register_uri('GET',
                                auth.V2_URL,
-                               body=auth.V2_VERSION_ENTRY)
+                               json=auth.V2_VERSION_ENTRY)
 
         neutron_shell = openstack_shell.NeutronShell('2.0')
         self.addCleanup(self.mox.UnsetStubs)
@@ -240,12 +263,12 @@ class ShellTest(testtools.TestCase):
         neutron_shell.run(cmdline.split())
         self.mox.VerifyAll()
 
-    @httpretty.activate
-    def test_failed_auth_version_discovery_v3_auth_url(self):
+    @requests_mock.Mocker()
+    def test_failed_auth_version_discovery_v3_auth_url(self, mrequests):
         # emulate Keystone version discovery
-        httpretty.register_uri(httpretty.GET,
+        mrequests.register_uri('GET',
                                auth.V3_URL,
-                               status=405)
+                               status_code=405)
 
         neutron_shell = openstack_shell.NeutronShell('2.0')
         self.addCleanup(self.mox.UnsetStubs)
@@ -276,12 +299,12 @@ class ShellTest(testtools.TestCase):
         neutron_shell.run(cmdline.split())
         self.mox.VerifyAll()
 
-    @httpretty.activate
-    def test_failed_auth_version_discovery_v2_auth_url(self):
+    @requests_mock.Mocker()
+    def test_failed_auth_version_discovery_v2_auth_url(self, mrequests):
         # emulate Keystone version discovery
-        httpretty.register_uri(httpretty.GET,
+        mrequests.register_uri('GET',
                                auth.V2_URL,
-                               status=405)
+                               status_code=405)
 
         neutron_shell = openstack_shell.NeutronShell('2.0')
         self.addCleanup(self.mox.UnsetStubs)
@@ -311,12 +334,12 @@ class ShellTest(testtools.TestCase):
         neutron_shell.run(cmdline.split())
         self.mox.VerifyAll()
 
-    @httpretty.activate
-    def test_auth_version_discovery_v3(self):
+    @requests_mock.Mocker()
+    def test_auth_version_discovery_v3(self, mrequests):
         # emulate Keystone version discovery
-        httpretty.register_uri(httpretty.GET,
+        mrequests.register_uri('GET',
                                auth.BASE_URL,
-                               body=auth.V3_VERSION_LIST)
+                               text=auth.V3_VERSION_LIST)
 
         neutron_shell = openstack_shell.NeutronShell('2.0')
         self.addCleanup(self.mox.UnsetStubs)
@@ -347,12 +370,12 @@ class ShellTest(testtools.TestCase):
         neutron_shell.run(cmdline.split())
         self.mox.VerifyAll()
 
-    @httpretty.activate
-    def test_auth_version_discovery_v2(self):
+    @requests_mock.Mocker()
+    def test_auth_version_discovery_v2(self, mrequests):
         # emulate Keystone version discovery
-        httpretty.register_uri(httpretty.GET,
+        mrequests.register_uri('GET',
                                auth.BASE_URL,
-                               body=auth.V3_VERSION_LIST)
+                               text=auth.V3_VERSION_LIST)
 
         neutron_shell = openstack_shell.NeutronShell('2.0')
         self.addCleanup(self.mox.UnsetStubs)
@@ -382,12 +405,12 @@ class ShellTest(testtools.TestCase):
         neutron_shell.run(cmdline.split())
         self.mox.VerifyAll()
 
-    @httpretty.activate
-    def test_insecure_auth(self):
+    @requests_mock.Mocker()
+    def test_insecure_auth(self, mrequests):
         # emulate Keystone version discovery
-        httpretty.register_uri(httpretty.GET,
+        mrequests.register_uri('GET',
                                auth.V2_URL,
-                               body=auth.V2_VERSION_ENTRY)
+                               json=auth.V2_VERSION_ENTRY)
 
         neutron_shell = openstack_shell.NeutronShell('2.0')
         self.addCleanup(self.mox.UnsetStubs)
@@ -427,7 +450,7 @@ class ShellTest(testtools.TestCase):
         self.mox.StubOutClassWithMocks(openstack_shell, 'NeutronShell')
         qshell_mock = openstack_shell.NeutronShell('2.0')
         unicode_text = u'\u7f51\u7edc'
-        argv = ['net-list', unicode_text, unicode_text.encode('utf-8')]
+        argv = ['net-list', unicode_text, unicode_text]
         qshell_mock.run([u'net-list', unicode_text,
                          unicode_text]).AndReturn(0)
         self.mox.ReplayAll()

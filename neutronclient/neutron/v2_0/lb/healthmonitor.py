@@ -13,17 +13,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
-# @author: Ilya Shakhat, Mirantis Inc.
-#
 
 from __future__ import print_function
 
+from neutronclient.i18n import _
 from neutronclient.neutron import v2_0 as neutronV20
-from neutronclient.openstack.common.gettextutils import _
 
 
 class ListHealthMonitor(neutronV20.ListCommand):
-    """List healthmonitors that belong to a given tenant."""
+    """List health monitors that belong to a given tenant."""
 
     resource = 'health_monitor'
     list_columns = ['id', 'type', 'admin_state_up']
@@ -32,13 +30,14 @@ class ListHealthMonitor(neutronV20.ListCommand):
 
 
 class ShowHealthMonitor(neutronV20.ShowCommand):
-    """Show information of a given healthmonitor."""
+    """Show information of a given health monitor."""
 
     resource = 'health_monitor'
+    allow_names = False
 
 
 class CreateHealthMonitor(neutronV20.CreateCommand):
-    """Create a healthmonitor."""
+    """Create a health monitor."""
 
     resource = 'health_monitor'
 
@@ -101,16 +100,17 @@ class CreateHealthMonitor(neutronV20.CreateCommand):
 
 
 class UpdateHealthMonitor(neutronV20.UpdateCommand):
-    """Update a given healthmonitor."""
+    """Update a given health monitor."""
 
     resource = 'health_monitor'
     allow_names = False
 
 
 class DeleteHealthMonitor(neutronV20.DeleteCommand):
-    """Delete a given healthmonitor."""
+    """Delete a given health monitor."""
 
     resource = 'health_monitor'
+    allow_names = False
 
 
 class AssociateHealthMonitor(neutronV20.NeutronCommand):

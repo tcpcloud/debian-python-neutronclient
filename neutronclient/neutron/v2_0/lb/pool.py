@@ -13,14 +13,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
-# @author: Ilya Shakhat, Mirantis Inc.
-#
 
 
 import six
 
+from neutronclient.i18n import _
 from neutronclient.neutron import v2_0 as neutronV20
-from neutronclient.openstack.common.gettextutils import _
 
 
 def _format_provider(pool):

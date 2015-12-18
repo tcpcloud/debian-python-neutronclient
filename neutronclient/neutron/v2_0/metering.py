@@ -1,7 +1,5 @@
 # Copyright (C) 2013 eNovance SAS <licensing@enovance.com>
 #
-# Author: Sylvain Afchain <sylvain.afchain@enovance.com>
-#
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
 # a copy of the License at
@@ -14,8 +12,8 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+from neutronclient.i18n import _
 from neutronclient.neutron import v2_0 as neutronv20
-from neutronclient.openstack.common.gettextutils import _
 
 
 class ListMeteringLabel(neutronv20.ListCommand):

@@ -17,13 +17,17 @@
 
 """Utilities and helper functions."""
 
+import argparse
 import logging
+import netaddr
 import os
-import sys
 
-from neutronclient.common import _
+from oslo_utils import encodeutils
+from oslo_utils import importutils
+import six
+
 from neutronclient.common import exceptions
-from neutronclient.openstack.common import strutils
+from neutronclient.i18n import _
 
 
 def env(*vars, **kwargs):
@@ -36,17 +40,6 @@ def env(*vars, **kwargs):
         if value:
             return value
     return kwargs.get('default', '')
-
-
-def import_class(import_str):
-    """Returns a class from a string including module and class.
-
-    :param import_str: a string representation of the class name
-    :rtype: the requested class
-    """
-    mod_str, _sep, class_str = import_str.rpartition('.')
-    __import__(mod_str)
-    return getattr(sys.modules[mod_str], class_str)
 
 
 def get_client_class(api_name, version, version_map):
@@ -66,7 +59,7 @@ def get_client_class(api_name, version, version_map):
                      'map_keys': ', '.join(version_map.keys())}
         raise exceptions.UnsupportedVersion(msg)
 
-    return import_class(client_path)
+    return importutils.import_class(client_path)
 
 
 def get_item_properties(item, fields, mixed_case_fields=(), formatters=None):
@@ -112,9 +105,15 @@ def str2dict(strdict):
 
     :param strdict: key1=value1,key2=value2
     """
-    if not strdict:
-        return {}
-    return dict([kv.split('=', 1) for kv in strdict.split(',')])
+    result = {}
+    if strdict:
+        for kv in strdict.split(','):
+            key, sep, value = kv.partition('=')
+            if not sep:
+                msg = _("invalid key-value '%s', expected format: key=value")
+                raise argparse.ArgumentTypeError(msg % kv)
+            result[key] = value
+    return result
 
 
 def http_log_req(_logger, args, kwargs):
@@ -134,27 +133,27 @@ def http_log_req(_logger, args, kwargs):
 
     if 'body' in kwargs and kwargs['body']:
         string_parts.append(" -d '%s'" % (kwargs['body']))
-    string_parts = safe_encode_list(string_parts)
-    _logger.debug("\nREQ: %s\n", "".join(string_parts))
+    req = encodeutils.safe_encode("".join(string_parts))
+    _logger.debug("REQ: %s", req)
 
 
 def http_log_resp(_logger, resp, body):
     if not _logger.isEnabledFor(logging.DEBUG):
         return
-    _logger.debug("RESP:%(code)s %(headers)s %(body)s\n",
+    _logger.debug("RESP: %(code)s %(headers)s %(body)s",
                   {'code': resp.status_code,
                    'headers': resp.headers,
                    'body': body})
 
 
 def _safe_encode_without_obj(data):
-    if isinstance(data, basestring):
-        return strutils.safe_encode(data)
+    if isinstance(data, six.string_types):
+        return encodeutils.safe_encode(data)
     return data
 
 
 def safe_encode_list(data):
-    return map(_safe_encode_without_obj, data)
+    return list(map(_safe_encode_without_obj, data))
 
 
 def safe_encode_dict(data):
@@ -166,4 +165,24 @@ def safe_encode_dict(data):
             return (k, safe_encode_dict(v))
         return (k, _safe_encode_without_obj(v))
 
-    return dict(map(_encode_item, data.items()))
+    return dict(list(map(_encode_item, data.items())))
+
+
+def add_boolean_argument(parser, name, **kwargs):
+    for keyword in ('metavar', 'choices'):
+        kwargs.pop(keyword, None)
+    default = kwargs.pop('default', argparse.SUPPRESS)
+    parser.add_argument(
+        name,
+        metavar='{True,False}',
+        choices=['True', 'true', 'False', 'false'],
+        default=default,
+        **kwargs)
+
+
+def is_valid_cidr(cidr):
+    try:
+        netaddr.IPNetwork(cidr)
+        return True
+    except Exception:
+        return False

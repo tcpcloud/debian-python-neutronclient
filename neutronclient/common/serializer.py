@@ -12,23 +12,22 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-###
-### Codes from neutron wsgi
-###
 
 import logging
 from xml.etree import ElementTree as etree
 from xml.parsers import expat
 
+from oslo_serialization import jsonutils
 import six
 
 from neutronclient.common import constants
 from neutronclient.common import exceptions as exception
-from neutronclient.openstack.common.gettextutils import _
-from neutronclient.openstack.common import jsonutils
+from neutronclient.i18n import _
 
 LOG = logging.getLogger(__name__)
+
+if six.PY3:
+    long = int
 
 
 class ActionDispatcher(object):
@@ -59,7 +58,7 @@ class JSONDictSerializer(DictSerializer):
 
     def default(self, data):
         def sanitizer(obj):
-            return unicode(obj)
+            return six.text_type(obj)
         return jsonutils.dumps(data, default=sanitizer)
 
 
@@ -100,7 +99,7 @@ class XMLDictSerializer(DictSerializer):
                     links = data.pop(link_keys[0], None)
                     has_atom = True
                 root_key = (len(data) == 1 and
-                            data.keys()[0] or constants.VIRTUAL_ROOT_KEY)
+                            list(data.keys())[0] or constants.VIRTUAL_ROOT_KEY)
                 root_value = data.get(root_key, data)
             doc = etree.Element("_temp_root")
             used_prefixes = []
@@ -123,7 +122,7 @@ class XMLDictSerializer(DictSerializer):
         self._add_xmlns(node, used_prefixes, has_atom)
         return etree.tostring(node, encoding='UTF-8')
 
-    #NOTE (ameade): the has_atom should be removed after all of the
+    # NOTE(ameade): the has_atom should be removed after all of the
     # XML serializers and view builders have been updated to the current
     # spec that required all responses include the xmlns:atom, the has_atom
     # flag is to prevent current tests from breaking
@@ -143,7 +142,7 @@ class XMLDictSerializer(DictSerializer):
         result = etree.SubElement(parent, nodename)
         if ":" in nodename:
             used_prefixes.append(nodename.split(":", 1)[0])
-        #TODO(bcwaldon): accomplish this without a type-check
+        # TODO(bcwaldon): accomplish this without a type-check
         if isinstance(data, list):
             if not data:
                 result.set(
@@ -159,7 +158,7 @@ class XMLDictSerializer(DictSerializer):
             for item in data:
                 self._to_xml_node(result, metadata, singular, item,
                                   used_prefixes)
-        #TODO(bcwaldon): accomplish this without a type-check
+        # TODO(bcwaldon): accomplish this without a type-check
         elif isinstance(data, dict):
             if not data:
                 result.set(
@@ -195,10 +194,7 @@ class XMLDictSerializer(DictSerializer):
             LOG.debug("Data %(data)s type is %(type)s",
                       {'data': data,
                        'type': type(data)})
-            if isinstance(data, str):
-                result.text = unicode(data, 'utf-8')
-            else:
-                result.text = unicode(data)
+            result.text = six.text_type(data)
         return result
 
     def _create_link_nodes(self, xml_doc, links):
@@ -291,7 +287,7 @@ class XMLDeserializer(TextDeserializer):
             parseError = False
             # Python2.7
             if (hasattr(etree, 'ParseError') and
-                isinstance(e, getattr(etree, 'ParseError'))):
+                    isinstance(e, getattr(etree, 'ParseError'))):
                 parseError = True
             # Python2.6
             elif isinstance(e, expat.ExpatError):
@@ -341,9 +337,9 @@ class XMLDeserializer(TextDeserializer):
             result = dict()
             for attr in node.keys():
                 if (attr == 'xmlns' or
-                    attr.startswith('xmlns:') or
-                    attr == constants.XSI_ATTR or
-                    attr == constants.TYPE_ATTR):
+                        attr.startswith('xmlns:') or
+                        attr == constants.XSI_ATTR or
+                        attr == constants.TYPE_ATTR):
                     continue
                 result[self._get_key(attr)] = node.get(attr)
             children = list(node)

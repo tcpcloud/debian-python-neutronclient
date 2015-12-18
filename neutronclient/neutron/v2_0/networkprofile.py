@@ -10,15 +10,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
-#@author Abhishek Raut, Cisco Systems
-#@author Sergey Sudakovich, Cisco Systems
-#@author Rudrajit Tapadar, Cisco Systems
 
 from __future__ import print_function
 
+from neutronclient.i18n import _
 from neutronclient.neutron import v2_0 as neutronV20
 from neutronclient.neutron.v2_0 import parse_args_to_dict
-from neutronclient.openstack.common.gettextutils import _
 
 RESOURCE = 'network_profile'
 SEGMENT_TYPE_CHOICES = ['vlan', 'overlay', 'multi-segment', 'trunk']
@@ -42,7 +39,7 @@ class ShowNetworkProfile(neutronV20.ShowCommand):
 
 
 class CreateNetworkProfile(neutronV20.CreateCommand):
-    """Creates a network profile."""
+    """Create a network profile."""
 
     resource = RESOURCE
 
@@ -54,9 +51,10 @@ class CreateNetworkProfile(neutronV20.CreateCommand):
                             help='Segment type.')
         # TODO(Abhishek): Check on sub-type choices depending on segment_type
         parser.add_argument('--sub_type',
-                            help=_('Sub-type for the segment. Available sub-'
-                            'types for overlay segments: native, enhanced; '
-                            'For trunk segments: vlan, overlay.'))
+                            help=_('Sub-type for the segment. Available '
+                                   'sub-types for overlay segments: '
+                                   'native, enhanced; For trunk segments: '
+                                   'vlan, overlay.'))
         parser.add_argument('--segment_range',
                             help=_('Range for the segment.'))
         parser.add_argument('--physical_network',

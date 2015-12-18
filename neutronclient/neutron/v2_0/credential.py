@@ -11,8 +11,8 @@
 #    under the License.
 #
 
+from neutronclient.i18n import _
 from neutronclient.neutron import v2_0 as neutronV20
-from neutronclient.openstack.common.gettextutils import _
 
 
 class ListCredential(neutronV20.ListCommand):
@@ -32,7 +32,7 @@ class ShowCredential(neutronV20.ShowCommand):
 
 
 class CreateCredential(neutronV20.CreateCommand):
-    """Creates a credential."""
+    """Create a credential."""
 
     resource = 'credential'
 
@@ -67,7 +67,7 @@ class CreateCredential(neutronV20.CreateCommand):
 
 
 class DeleteCredential(neutronV20.DeleteCommand):
-    """Delete a  given credential."""
+    """Delete a given credential."""
 
     resource = 'credential'
     allow_names = False

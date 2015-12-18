@@ -13,7 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import sys
+import argparse
 
 import testtools
 
@@ -43,6 +43,11 @@ class TestUtils(testtools.TestCase):
         input_str = None
         expected = {}
         self.assertEqual(expected, utils.str2dict(input_str))
+
+    def test_invalid_string_to_dictionary(self):
+        input_str = 'invalid'
+        self.assertRaises(argparse.ArgumentTypeError,
+                          utils.str2dict, input_str)
 
     def test_get_dict_item_properties(self):
         item = {'name': 'test_name', 'id': 'test_id'}
@@ -104,17 +109,13 @@ class TestUtils(testtools.TestCase):
         act = utils.get_item_properties(item, fields, formatters=formatters)
         self.assertEqual(('test_name', 'test_id', 'test', 'pass'), act)
 
+    def test_is_cidr(self):
+        self.assertTrue(utils.is_valid_cidr('10.10.10.0/24'))
+        self.assertFalse(utils.is_valid_cidr('10.10.10..0/24'))
+        self.assertFalse(utils.is_valid_cidr('wrong_cidr_format'))
+
 
 class ImportClassTestCase(testtools.TestCase):
-    def test_import_class(self):
-        dt = utils.import_class('datetime.datetime')
-        self.assertTrue(sys.modules['datetime'].datetime is dt)
-
-    def test_import_bad_class(self):
-        self.assertRaises(
-            ImportError, utils.import_class,
-            'lol.u_mad.brah')
-
     def test_get_client_class_invalid_version(self):
         self.assertRaises(
             exceptions.UnsupportedVersion,

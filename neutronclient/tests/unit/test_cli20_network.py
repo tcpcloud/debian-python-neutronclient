@@ -17,10 +17,10 @@ import itertools
 import sys
 
 from mox3 import mox
+from oslo_serialization import jsonutils
 
 from neutronclient.common import exceptions
 from neutronclient.neutron.v2_0 import network
-from neutronclient.openstack.common import jsonutils
 from neutronclient import shell
 from neutronclient.tests.unit import test_cli20
 
@@ -72,6 +72,24 @@ class CLITestV20NetworkJSON(test_cli20.CLITestV20Base):
                                    position_names, position_values,
                                    tenant_id='tenantid')
 
+    def test_create_network_provider_args(self):
+        """Create net: with --provider arguments."""
+        resource = 'network'
+        cmd = network.CreateNetwork(test_cli20.MyApp(sys.stdout), None)
+        name = 'myname'
+        myid = 'myid'
+
+        # Test --provider attributes before network name
+        args = ['--provider:network_type', 'vlan',
+                '--provider:physical_network', 'physnet1',
+                '--provider:segmentation_id', '400', name]
+        position_names = ['provider:network_type',
+                          'provider:physical_network',
+                          'provider:segmentation_id', 'name']
+        position_values = ['vlan', 'physnet1', '400', name]
+        self._test_create_resource(resource, cmd, name, myid, args,
+                                   position_names, position_values)
+
     def test_create_network_tags(self):
         """Create net: myname --tags a b."""
         resource = 'network'
@@ -103,6 +121,33 @@ class CLITestV20NetworkJSON(test_cli20.CLITestV20Base):
         self._test_create_resource(resource, cmd, name, myid, args,
                                    position_names, position_values,
                                    admin_state_up=False)
+
+    def test_create_network_vlan_transparent(self):
+        """Create net: myname --vlan-transparent True."""
+        resource = 'network'
+        cmd = network.CreateNetwork(test_cli20.MyApp(sys.stdout), None)
+        name = 'myname'
+        myid = 'myid'
+        args = ['--vlan-transparent', 'True', name]
+        vlantrans = {'vlan_transparent': 'True'}
+        position_names = ['name', ]
+        position_values = [name, ]
+        self._test_create_resource(resource, cmd, name, myid, args,
+                                   position_names, position_values,
+                                   **vlantrans)
+
+    def test_create_network_with_qos_policy(self):
+        """Create net: --qos-policy mypolicy."""
+        resource = 'network'
+        cmd = network.CreateNetwork(test_cli20.MyApp(sys.stdout), None)
+        name = 'myname'
+        myid = 'myid'
+        qos_policy_name = 'mypolicy'
+        args = [name, '--qos-policy', qos_policy_name]
+        position_names = ['name', 'qos_policy_id']
+        position_values = [name, qos_policy_name]
+        self._test_create_resource(resource, cmd, name, myid, args,
+                                   position_names, position_values)
 
     def test_list_nets_empty_with_column(self):
         resources = "networks"
@@ -286,7 +331,7 @@ class CLITestV20NetworkJSON(test_cli20.CLITestV20Base):
         self.assertEqual(1, len(returned_networks))
         net = returned_networks[0]
         self.assertEqual(1, len(net))
-        self.assertEqual("id", net.keys()[0])
+        self.assertIn("id", net.keys())
 
     def test_list_nets_with_default_column(self):
         cmd = network.ListNetwork(test_cli20.MyApp(sys.stdout), None)
@@ -454,6 +499,22 @@ class CLITestV20NetworkJSON(test_cli20.CLITestV20Base):
                                     'tags': ['a', 'b'], }
                                    )
 
+    def test_update_network_with_qos_policy(self):
+        """Update net: myid --qos-policy mypolicy."""
+        resource = 'network'
+        cmd = network.UpdateNetwork(test_cli20.MyApp(sys.stdout), None)
+        self._test_update_resource(resource, cmd, 'myid',
+                                   ['myid', '--qos-policy', 'mypolicy'],
+                                   {'qos_policy_id': 'mypolicy', })
+
+    def test_update_network_with_no_qos_policy(self):
+        """Update net: myid --no-qos-policy."""
+        resource = 'network'
+        cmd = network.UpdateNetwork(test_cli20.MyApp(sys.stdout), None)
+        self._test_update_resource(resource, cmd, 'myid',
+                                   ['myid', '--no-qos-policy'],
+                                   {'qos_policy_id': None, })
+
     def test_show_network(self):
         """Show net: --fields id --fields name myid."""
         resource = 'network'
@@ -519,13 +580,15 @@ class CLITestV20NetworkJSON(test_cli20.CLITestV20Base):
             filters, response = self._build_test_data(data)
 
             # 1 char of extra URI len will cause a split in 2 requests
-            self.mox.StubOutWithMock(self.client, "_check_uri_length")
-            self.client._check_uri_length(mox.IgnoreArg()).AndRaise(
+            self.mox.StubOutWithMock(self.client.httpclient,
+                                     "_check_uri_length")
+            self.client.httpclient._check_uri_length(mox.IgnoreArg()).AndRaise(
                 exceptions.RequestURITooLong(excess=1))
 
             for data in sub_data_lists:
                 filters, response = self._build_test_data(data)
-                self.client._check_uri_length(mox.IgnoreArg()).AndReturn(None)
+                self.client.httpclient._check_uri_length(
+                    mox.IgnoreArg()).AndReturn(None)
                 self.client.httpclient.request(
                     test_cli20.MyUrlComparator(
                         test_cli20.end_url(

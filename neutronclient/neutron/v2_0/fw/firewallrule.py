@@ -13,13 +13,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
-# @author: KC Wang, Big Switch Networks
-#
 
 import argparse
 
+from neutronclient.common import utils
+from neutronclient.i18n import _
 from neutronclient.neutron import v2_0 as neutronv20
-from neutronclient.openstack.common.gettextutils import _
 
 
 class ListFirewallRule(neutronv20.ListCommand):
@@ -95,11 +94,9 @@ class CreateFirewallRule(neutronv20.CreateCommand):
             '--destination-port',
             help=_('Destination port (integer in [1, 65535] or range in '
                    'a:b).'))
-        parser.add_argument(
-            '--enabled',
-            dest='enabled', choices=['True', 'False'],
-            help=_('Whether to enable or disable this rule.'),
-            default=argparse.SUPPRESS)
+        utils.add_boolean_argument(
+            parser, '--enabled', dest='enabled',
+            help=_('Whether to enable or disable this rule.'))
         parser.add_argument(
             '--protocol', choices=['tcp', 'udp', 'icmp', 'any'],
             required=True,
@@ -107,7 +104,7 @@ class CreateFirewallRule(neutronv20.CreateCommand):
         parser.add_argument(
             '--action',
             required=True,
-            choices=['allow', 'deny'],
+            choices=['allow', 'deny', 'reject'],
             help=_('Action for the firewall rule.'))
 
     def args2body(self, parsed_args):

@@ -13,16 +13,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
-# @author: Swaminathan Vasudevan, Hewlett-Packard.
 
 from neutronclient.common import utils
+from neutronclient.i18n import _
 from neutronclient.neutron import v2_0 as neutronv20
 from neutronclient.neutron.v2_0.vpn import utils as vpn_utils
-from neutronclient.openstack.common.gettextutils import _
 
 
 class ListIPsecPolicy(neutronv20.ListCommand):
-    """List ipsecpolicies that belongs to a given tenant connection."""
+    """List IPsec policies that belong to a given tenant connection."""
 
     resource = 'ipsecpolicy'
     list_columns = ['id', 'name', 'auth_algorithm',

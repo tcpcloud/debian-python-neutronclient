@@ -13,7 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutronclient.common import _
+from neutronclient.i18n import _
 
 """
 Neutron base exception handling.
@@ -140,13 +140,15 @@ class IpAddressInUseClient(Conflict):
     pass
 
 
-class OverQuotaClient(Conflict):
+class InvalidIpForNetworkClient(BadRequest):
     pass
 
 
-# TODO(amotoki): It is unused in Neutron, but it is referred to
-# in Horizon code. After Horizon code is updated, remove it.
-class AlreadyAttachedClient(Conflict):
+class InvalidIpForSubnetClient(BadRequest):
+    pass
+
+
+class OverQuotaClient(Conflict):
     pass
 
 

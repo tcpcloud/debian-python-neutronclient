@@ -21,6 +21,9 @@ Command-line interface to the Neutron APIs
 from __future__ import print_function
 
 import argparse
+import getpass
+import inspect
+import itertools
 import logging
 import os
 import sys
@@ -30,14 +33,19 @@ from keystoneclient.auth.identity import v3 as v3_auth
 from keystoneclient import discover
 from keystoneclient.openstack.common.apiclient import exceptions as ks_exc
 from keystoneclient import session
+from oslo_utils import encodeutils
 import six.moves.urllib.parse as urlparse
 
 from cliff import app
 from cliff import commandmanager
 
 from neutronclient.common import clientmanager
+from neutronclient.common import command as openstack_command
 from neutronclient.common import exceptions as exc
+from neutronclient.common import extension as client_extension
 from neutronclient.common import utils
+from neutronclient.i18n import _
+from neutronclient.neutron.v2_0 import address_scope
 from neutronclient.neutron.v2_0 import agent
 from neutronclient.neutron.v2_0 import agentscheduler
 from neutronclient.neutron.v2_0 import credential
@@ -49,9 +57,13 @@ from neutronclient.neutron.v2_0.fw import firewallrule
 from neutronclient.neutron.v2_0.lb import healthmonitor as lb_healthmonitor
 from neutronclient.neutron.v2_0.lb import member as lb_member
 from neutronclient.neutron.v2_0.lb import pool as lb_pool
+from neutronclient.neutron.v2_0.lb.v2 import healthmonitor as lbaas_healthmon
+from neutronclient.neutron.v2_0.lb.v2 import listener as lbaas_listener
+from neutronclient.neutron.v2_0.lb.v2 import loadbalancer as lbaas_loadbalancer
+from neutronclient.neutron.v2_0.lb.v2 import member as lbaas_member
+from neutronclient.neutron.v2_0.lb.v2 import pool as lbaas_pool
 from neutronclient.neutron.v2_0.lb import vip as lb_vip
 from neutronclient.neutron.v2_0 import metering
-from neutronclient.neutron.v2_0.nec import packetfilter
 from neutronclient.neutron.v2_0 import netpartition
 from neutronclient.neutron.v2_0 import network
 from neutronclient.neutron.v2_0 import networkprofile
@@ -59,17 +71,20 @@ from neutronclient.neutron.v2_0.nsx import networkgateway
 from neutronclient.neutron.v2_0.nsx import qos_queue
 from neutronclient.neutron.v2_0 import policyprofile
 from neutronclient.neutron.v2_0 import port
+from neutronclient.neutron.v2_0.qos import bandwidth_limit_rule
+from neutronclient.neutron.v2_0.qos import policy as qos_policy
+from neutronclient.neutron.v2_0.qos import rule as qos_rule
 from neutronclient.neutron.v2_0 import quota
+from neutronclient.neutron.v2_0 import rbac
 from neutronclient.neutron.v2_0 import router
 from neutronclient.neutron.v2_0 import securitygroup
 from neutronclient.neutron.v2_0 import servicetype
 from neutronclient.neutron.v2_0 import subnet
+from neutronclient.neutron.v2_0 import subnetpool
 from neutronclient.neutron.v2_0.vpn import ikepolicy
 from neutronclient.neutron.v2_0.vpn import ipsec_site_connection
 from neutronclient.neutron.v2_0.vpn import ipsecpolicy
 from neutronclient.neutron.v2_0.vpn import vpnservice
-from neutronclient.openstack.common.gettextutils import _
-from neutronclient.openstack.common import strutils
 from neutronclient.version import __version__
 
 
@@ -86,8 +101,23 @@ def run_command(cmd, cmd_parser, sub_argv):
         _argv = sub_argv[:index]
         values_specs = sub_argv[index:]
     known_args, _values_specs = cmd_parser.parse_known_args(_argv)
+    if(isinstance(cmd, subnet.CreateSubnet) and not known_args.cidr):
+        cidr = get_first_valid_cidr(_values_specs)
+        if cidr:
+            known_args.cidr = cidr
+            _values_specs.remove(cidr)
     cmd.values_specs = (index == -1 and _values_specs or values_specs)
     return cmd.run(known_args)
+
+
+def get_first_valid_cidr(value_specs):
+    # Bug 1442771, argparse does not allow optional positional parameter
+    # to be separated from previous positional parameter.
+    # When cidr was separated from network, the value will not be able
+    # to be parsed into known_args, but saved to _values_specs instead.
+    for value in value_specs:
+        if utils.is_valid_cidr(value):
+            return value
 
 
 def env(*_vars, **kwargs):
@@ -115,7 +145,12 @@ def check_non_negative_int(value):
     return value
 
 
+class BashCompletionCommand(openstack_command.OpenStackCommand):
+    """Prints all of the commands and options for bash-completion."""
+    resource = "bash_completion"
+
 COMMAND_V2 = {
+    'bash-completion': BashCompletionCommand,
     'net-list': network.ListNetwork,
     'net-external-list': network.ListExternalNetwork,
     'net-show': network.ShowNetwork,
@@ -127,6 +162,11 @@ COMMAND_V2 = {
     'subnet-create': subnet.CreateSubnet,
     'subnet-delete': subnet.DeleteSubnet,
     'subnet-update': subnet.UpdateSubnet,
+    'subnetpool-list': subnetpool.ListSubnetPool,
+    'subnetpool-show': subnetpool.ShowSubnetPool,
+    'subnetpool-create': subnetpool.CreateSubnetPool,
+    'subnetpool-delete': subnetpool.DeleteSubnetPool,
+    'subnetpool-update': subnetpool.UpdateSubnetPool,
     'port-list': port.ListPort,
     'port-show': port.ShowPort,
     'port-create': port.CreatePort,
@@ -163,6 +203,31 @@ COMMAND_V2 = {
     'security-group-rule-show': securitygroup.ShowSecurityGroupRule,
     'security-group-rule-create': securitygroup.CreateSecurityGroupRule,
     'security-group-rule-delete': securitygroup.DeleteSecurityGroupRule,
+    'lbaas-loadbalancer-list': lbaas_loadbalancer.ListLoadBalancer,
+    'lbaas-loadbalancer-show': lbaas_loadbalancer.ShowLoadBalancer,
+    'lbaas-loadbalancer-create': lbaas_loadbalancer.CreateLoadBalancer,
+    'lbaas-loadbalancer-update': lbaas_loadbalancer.UpdateLoadBalancer,
+    'lbaas-loadbalancer-delete': lbaas_loadbalancer.DeleteLoadBalancer,
+    'lbaas-listener-list': lbaas_listener.ListListener,
+    'lbaas-listener-show': lbaas_listener.ShowListener,
+    'lbaas-listener-create': lbaas_listener.CreateListener,
+    'lbaas-listener-update': lbaas_listener.UpdateListener,
+    'lbaas-listener-delete': lbaas_listener.DeleteListener,
+    'lbaas-pool-list': lbaas_pool.ListPool,
+    'lbaas-pool-show': lbaas_pool.ShowPool,
+    'lbaas-pool-create': lbaas_pool.CreatePool,
+    'lbaas-pool-update': lbaas_pool.UpdatePool,
+    'lbaas-pool-delete': lbaas_pool.DeletePool,
+    'lbaas-healthmonitor-list': lbaas_healthmon.ListHealthMonitor,
+    'lbaas-healthmonitor-show': lbaas_healthmon.ShowHealthMonitor,
+    'lbaas-healthmonitor-create': lbaas_healthmon.CreateHealthMonitor,
+    'lbaas-healthmonitor-update': lbaas_healthmon.UpdateHealthMonitor,
+    'lbaas-healthmonitor-delete': lbaas_healthmon.DeleteHealthMonitor,
+    'lbaas-member-list': lbaas_member.ListMember,
+    'lbaas-member-show': lbaas_member.ShowMember,
+    'lbaas-member-create': lbaas_member.CreateMember,
+    'lbaas-member-update': lbaas_member.UpdateMember,
+    'lbaas-member-delete': lbaas_member.DeleteMember,
     'lb-vip-list': lb_vip.ListVip,
     'lb-vip-show': lb_vip.ShowVip,
     'lb-vip-create': lb_vip.CreateVip,
@@ -218,6 +283,10 @@ COMMAND_V2 = {
     'l3-agent-list-hosting-router': agentscheduler.ListL3AgentsHostingRouter,
     'lb-pool-list-on-agent': agentscheduler.ListPoolsOnLbaasAgent,
     'lb-agent-hosting-pool': agentscheduler.GetLbaasAgentHostingPool,
+    'lbaas-loadbalancer-list-on-agent':
+        agentscheduler.ListLoadBalancersOnLbaasAgent,
+    'lbaas-agent-hosting-loadbalancer':
+        agentscheduler.GetLbaasAgentHostingLoadBalancer,
     'service-provider-list': servicetype.ListServiceProvider,
     'firewall-rule-list': firewallrule.ListFirewallRule,
     'firewall-rule-show': firewallrule.ShowFirewallRule,
@@ -290,11 +359,37 @@ COMMAND_V2 = {
     'nuage-netpartition-show': netpartition.ShowNetPartition,
     'nuage-netpartition-create': netpartition.CreateNetPartition,
     'nuage-netpartition-delete': netpartition.DeleteNetPartition,
-    'nec-packet-filter-list': packetfilter.ListPacketFilter,
-    'nec-packet-filter-show': packetfilter.ShowPacketFilter,
-    'nec-packet-filter-create': packetfilter.CreatePacketFilter,
-    'nec-packet-filter-update': packetfilter.UpdatePacketFilter,
-    'nec-packet-filter-delete': packetfilter.DeletePacketFilter,
+    'rbac-create': rbac.CreateRBACPolicy,
+    'rbac-update': rbac.UpdateRBACPolicy,
+    'rbac-list': rbac.ListRBACPolicy,
+    'rbac-show': rbac.ShowRBACPolicy,
+    'rbac-delete': rbac.DeleteRBACPolicy,
+    'address-scope-list': address_scope.ListAddressScope,
+    'address-scope-show': address_scope.ShowAddressScope,
+    'address-scope-create': address_scope.CreateAddressScope,
+    'address-scope-delete': address_scope.DeleteAddressScope,
+    'address-scope-update': address_scope.UpdateAddressScope,
+    'qos-policy-list': qos_policy.ListQoSPolicy,
+    'qos-policy-show': qos_policy.ShowQoSPolicy,
+    'qos-policy-create': qos_policy.CreateQoSPolicy,
+    'qos-policy-update': qos_policy.UpdateQoSPolicy,
+    'qos-policy-delete': qos_policy.DeleteQoSPolicy,
+    'qos-bandwidth-limit-rule-create': (
+        bandwidth_limit_rule.CreateQoSBandwidthLimitRule
+    ),
+    'qos-bandwidth-limit-rule-show': (
+        bandwidth_limit_rule.ShowQoSBandwidthLimitRule
+    ),
+    'qos-bandwidth-limit-rule-list': (
+        bandwidth_limit_rule.ListQoSBandwidthLimitRules
+    ),
+    'qos-bandwidth-limit-rule-update': (
+        bandwidth_limit_rule.UpdateQoSBandwidthLimitRule
+    ),
+    'qos-bandwidth-limit-rule-delete': (
+        bandwidth_limit_rule.DeleteQoSBandwidthLimitRule
+    ),
+    'qos-available-rule-types': qos_rule.ListQoSRuleTypes,
 }
 
 COMMANDS = {'2.0': COMMAND_V2}
@@ -343,6 +438,11 @@ class NeutronShell(app.App):
         self.commands = COMMANDS
         for k, v in self.commands[apiversion].items():
             self.command_manager.add_command(k, v)
+
+        self._register_extensions(VERSION)
+
+        # Pop the 'complete' to correct the outputs of 'neutron help'.
+        self.command_manager.commands.pop('complete')
 
         # This is instantiated in initialize_app() only when using
         # password flow auth
@@ -631,6 +731,29 @@ class NeutronShell(app.App):
                 options.add(option)
         print(' '.join(commands | options))
 
+    def _register_extensions(self, version):
+        for name, module in itertools.chain(
+                client_extension._discover_via_entry_points()):
+            self._extend_shell_commands(name, module, version)
+
+    def _extend_shell_commands(self, name, module, version):
+        classes = inspect.getmembers(module, inspect.isclass)
+        for cls_name, cls in classes:
+            if (issubclass(cls, client_extension.NeutronClientExtension) and
+                    hasattr(cls, 'shell_command')):
+                cmd = cls.shell_command
+                if hasattr(cls, 'versions'):
+                    if version not in cls.versions:
+                        continue
+                try:
+                    name_prefix = "[%s]" % name
+                    cls.__doc__ = ("%s %s" % (name_prefix, cls.__doc__) if
+                                   cls.__doc__ else name_prefix)
+                    self.command_manager.add_command(cmd, cls)
+                    self.commands[version][cmd] = cls
+                except TypeError:
+                    pass
+
     def run(self, argv):
         """Equivalent to the main program for the application.
 
@@ -643,7 +766,7 @@ class NeutronShell(app.App):
             help_pos = -1
             help_command_pos = -1
             for arg in argv:
-                if arg == 'bash-completion':
+                if arg == 'bash-completion' and help_command_pos == -1:
                     self._bash_completion()
                     return 0
                 if arg in self.commands[self.api_version]:
@@ -666,10 +789,10 @@ class NeutronShell(app.App):
             self.initialize_app(remainder)
         except Exception as err:
             if self.options.verbose_level >= self.DEBUG_LEVEL:
-                self.log.exception(unicode(err))
+                self.log.exception(err)
                 raise
             else:
-                self.log.error(unicode(err))
+                self.log.error(err)
             return 1
         if self.interactive_mode:
             _argv = [sys.argv[0]]
@@ -706,33 +829,46 @@ class NeutronShell(app.App):
                 if not self.options.os_token:
                     raise exc.CommandError(
                         _("You must provide a token via"
-                          " either --os-token or env[OS_TOKEN]"))
+                          " either --os-token or env[OS_TOKEN]"
+                          " when providing a service URL"))
 
                 if not self.options.os_url:
                     raise exc.CommandError(
                         _("You must provide a service URL via"
-                          " either --os-url or env[OS_URL]"))
+                          " either --os-url or env[OS_URL]"
+                          " when providing a token"))
 
             else:
                 # Validate password flow auth
                 project_info = (self.options.os_tenant_name or
                                 self.options.os_tenant_id or
                                 (self.options.os_project_name and
-                                    (self.options.project_domain_name or
-                                     self.options.project_domain_id)) or
+                                    (self.options.os_project_domain_name or
+                                     self.options.os_project_domain_id)) or
                                 self.options.os_project_id)
 
                 if (not self.options.os_username
-                    and not self.options.os_user_id):
+                        and not self.options.os_user_id):
                     raise exc.CommandError(
                         _("You must provide a username or user ID via"
                           "  --os-username, env[OS_USERNAME] or"
-                          "  --os-user_id, env[OS_USER_ID]"))
+                          "  --os-user-id, env[OS_USER_ID]"))
 
                 if not self.options.os_password:
-                    raise exc.CommandError(
-                        _("You must provide a password via"
-                          " either --os-password or env[OS_PASSWORD]"))
+                    # No password, If we've got a tty, try prompting for it
+                    if hasattr(sys.stdin, 'isatty') and sys.stdin.isatty():
+                        # Check for Ctl-D
+                        try:
+                            self.options.os_password = getpass.getpass(
+                                'OS Password: ')
+                        except EOFError:
+                            pass
+                    # No password because we didn't have a tty or the
+                    # user Ctl-D when prompted.
+                    if not self.options.os_password:
+                        raise exc.CommandError(
+                            _("You must provide a password via"
+                              " either --os-password or env[OS_PASSWORD]"))
 
                 if (not project_info):
                     # tenent is deprecated in Keystone v3. Use the latest
@@ -752,13 +888,15 @@ class NeutronShell(app.App):
                     raise exc.CommandError(
                         _("You must provide an auth url via"
                           " either --os-auth-url or via env[OS_AUTH_URL]"))
+            auth_session = self._get_keystone_session()
+            auth = auth_session.auth
         else:   # not keystone
             if not self.options.os_url:
                 raise exc.CommandError(
                     _("You must provide a service URL via"
                       " either --os-url or env[OS_URL]"))
-
-        auth_session = self._get_keystone_session()
+            auth_session = None
+            auth = None
 
         self.client_manager = clientmanager.ClientManager(
             token=self.options.os_token,
@@ -783,7 +921,7 @@ class NeutronShell(app.App):
             retries=self.options.retries,
             raise_errors=False,
             session=auth_session,
-            auth=auth_session.auth,
+            auth=auth,
             log_credentials=True)
         return
 
@@ -923,12 +1061,15 @@ class NeutronShell(app.App):
 
 def main(argv=sys.argv[1:]):
     try:
-        return NeutronShell(NEUTRON_API_VERSION).run(map(strutils.safe_decode,
-                                                         argv))
+        return NeutronShell(NEUTRON_API_VERSION).run(
+            list(map(encodeutils.safe_decode, argv)))
+    except KeyboardInterrupt:
+        print("... terminating neutron client", file=sys.stderr)
+        return 130
     except exc.NeutronClientException:
         return 1
     except Exception as e:
-        print(unicode(e))
+        print(e)
         return 1
 
 

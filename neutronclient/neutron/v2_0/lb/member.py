@@ -13,11 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
-# @author: Ilya Shakhat, Mirantis Inc.
-#
 
+from neutronclient.i18n import _
 from neutronclient.neutron import v2_0 as neutronV20
-from neutronclient.openstack.common.gettextutils import _
 
 
 class ListMember(neutronV20.ListCommand):
@@ -35,6 +33,7 @@ class ShowMember(neutronV20.ShowCommand):
     """Show information of a given member."""
 
     resource = 'member'
+    allow_names = False
 
 
 class CreateMember(neutronV20.CreateCommand):
@@ -43,9 +42,6 @@ class CreateMember(neutronV20.CreateCommand):
     resource = 'member'
 
     def add_known_arguments(self, parser):
-        parser.add_argument(
-            'pool_id', metavar='POOL',
-            help=_('Pool ID or name this vip belongs to.'))
         parser.add_argument(
             '--admin-state-down',
             dest='admin_state', action='store_false',
@@ -62,6 +58,9 @@ class CreateMember(neutronV20.CreateCommand):
             required=True,
             help=_('Port on which the pool member listens for requests or '
                    'connections.'))
+        parser.add_argument(
+            'pool_id', metavar='POOL',
+            help=_('Pool ID or name this vip belongs to.'))
 
     def args2body(self, parsed_args):
         _pool_id = neutronV20.find_resourceid_by_name_or_id(

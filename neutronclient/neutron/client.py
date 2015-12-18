@@ -16,7 +16,7 @@
 
 from neutronclient.common import exceptions
 from neutronclient.common import utils
-from neutronclient.openstack.common.gettextutils import _
+from neutronclient.i18n import _
 
 
 API_NAME = 'network'
@@ -42,6 +42,7 @@ def make_client(instance):
                                 region_name=instance._region_name,
                                 auth_url=instance._auth_url,
                                 endpoint_url=url,
+                                endpoint_type=instance._endpoint_type,
                                 token=instance._token,
                                 auth_strategy=instance._auth_strategy,
                                 insecure=instance._insecure,

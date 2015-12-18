@@ -15,12 +15,13 @@
 #
 
 import contextlib
+import copy
 import itertools
 import sys
-import urllib
 
 import fixtures
 from mox3 import mox
+from oslo_utils import encodeutils
 from oslotest import base
 import requests
 import six
@@ -28,6 +29,7 @@ import six.moves.urllib.parse as urlparse
 
 from neutronclient.common import constants
 from neutronclient.common import exceptions
+from neutronclient.common import utils
 from neutronclient.neutron import v2_0 as neutronV2_0
 from neutronclient import shell
 from neutronclient.v2_0 import client
@@ -36,6 +38,17 @@ API_VERSION = "2.0"
 FORMAT = 'json'
 TOKEN = 'testtoken'
 ENDURL = 'localurl'
+
+non_admin_status_resources = ['subnet', 'floatingip', 'security_group',
+                              'security_group_rule', 'qos_queue',
+                              'network_gateway', 'gateway_device',
+                              'credential', 'network_profile',
+                              'policy_profile', 'ikepolicy',
+                              'ipsecpolicy', 'metering_label',
+                              'metering_label_rule', 'net_partition',
+                              'fox_socket', 'subnetpool',
+                              'rbac_policy', 'address_scope',
+                              'policy', 'bandwidth_limit_rule']
 
 
 @contextlib.contextmanager
@@ -49,7 +62,7 @@ def capture_std_streams():
         sys.stdout, sys.stderr = stdout, stderr
 
 
-class FakeStdout:
+class FakeStdout(object):
 
     def __init__(self):
         self.content = []
@@ -90,10 +103,14 @@ class MyUrlComparator(mox.Comparator):
         lhsp = urlparse.urlparse(self.lhs)
         rhsp = urlparse.urlparse(rhs)
 
+        lhs_qs = urlparse.parse_qsl(lhsp.query)
+        rhs_qs = urlparse.parse_qsl(rhsp.query)
+
         return (lhsp.scheme == rhsp.scheme and
                 lhsp.netloc == rhsp.netloc and
                 lhsp.path == rhsp.path and
-                urlparse.parse_qs(lhsp.query) == urlparse.parse_qs(rhsp.query))
+                len(lhs_qs) == len(rhs_qs) and
+                set(lhs_qs) == set(rhs_qs))
 
     def __str__(self):
         if self.client and self.client.format != FORMAT:
@@ -176,16 +193,12 @@ class CLITestV20Base(base.BaseTestCase):
 
     def _get_attr_metadata(self):
         return self.metadata
-        client.Client.EXTED_PLURALS.update(constants.PLURALS)
-        client.Client.EXTED_PLURALS.update({'tags': 'tag'})
-        return {'plurals': client.Client.EXTED_PLURALS,
-                'xmlns': constants.XML_NS_V20,
-                constants.EXT_NS: {'prefix': 'http://xxxx.yy.com'}}
 
     def setUp(self, plurals=None):
         """Prepare the test environment."""
         super(CLITestV20Base, self).setUp()
         client.Client.EXTED_PLURALS.update(constants.PLURALS)
+        self.non_admin_status_resources = copy.copy(non_admin_status_resources)
         if plurals is not None:
             client.Client.EXTED_PLURALS.update(plurals)
         self.metadata = {'plurals': client.Client.EXTED_PLURALS,
@@ -207,24 +220,22 @@ class CLITestV20Base(base.BaseTestCase):
             self._get_attr_metadata))
         self.client = client.Client(token=TOKEN, endpoint_url=self.endurl)
 
+    def register_non_admin_status_resource(self, resource_name):
+        self.non_admin_status_resources.append(resource_name)
+
     def _test_create_resource(self, resource, cmd, name, myid, args,
                               position_names, position_values,
                               tenant_id=None, tags=None, admin_state_up=True,
                               extra_body=None, cmd_resource=None,
-                              parent_id=None, **kwargs):
+                              parent_id=None, no_api_call=False,
+                              expected_exception=None,
+                              **kwargs):
         self.mox.StubOutWithMock(cmd, "get_client")
         self.mox.StubOutWithMock(self.client.httpclient, "request")
         cmd.get_client().MultipleTimes().AndReturn(self.client)
-        non_admin_status_resources = ['subnet', 'floatingip', 'security_group',
-                                      'security_group_rule', 'qos_queue',
-                                      'network_gateway', 'gateway_device',
-                                      'credential', 'network_profile',
-                                      'policy_profile', 'ikepolicy',
-                                      'ipsecpolicy', 'metering_label',
-                                      'metering_label_rule', 'net_partition']
         if not cmd_resource:
             cmd_resource = resource
-        if (resource in non_admin_status_resources):
+        if (resource in self.non_admin_status_resources):
             body = {resource: {}, }
         else:
             body = {resource: {'admin_state_up': admin_state_up, }, }
@@ -256,21 +267,26 @@ class CLITestV20Base(base.BaseTestCase):
             mox_body = MyComparator(body, self.client)
         else:
             mox_body = self.client.serialize(body)
-        self.client.httpclient.request(
-            end_url(path, format=self.format), 'POST',
-            body=mox_body,
-            headers=mox.ContainsKeyValue(
-                'X-Auth-Token', TOKEN)).AndReturn((MyResp(200), resstr))
+        if not no_api_call:
+            self.client.httpclient.request(
+                end_url(path, format=self.format), 'POST',
+                body=mox_body,
+                headers=mox.ContainsKeyValue(
+                    'X-Auth-Token', TOKEN)).AndReturn((MyResp(200), resstr))
         args.extend(['--request-format', self.format])
         self.mox.ReplayAll()
         cmd_parser = cmd.get_parser('create_' + resource)
-        shell.run_command(cmd, cmd_parser, args)
+        if expected_exception:
+            self.assertRaises(expected_exception,
+                              shell.run_command, cmd, cmd_parser, args)
+        else:
+            shell.run_command(cmd, cmd_parser, args)
+            _str = self.fake_stdout.make_string()
+            self.assertIn(myid, _str)
+            if name:
+                self.assertIn(name, _str)
         self.mox.VerifyAll()
         self.mox.UnsetStubs()
-        _str = self.fake_stdout.make_string()
-        self.assertIn(myid, _str)
-        if name:
-            self.assertIn(name, _str)
 
     def _test_list_columns(self, cmd, resources,
                            resources_out, args=('-f', 'json'),
@@ -303,7 +319,7 @@ class CLITestV20Base(base.BaseTestCase):
                              fields_1=(), fields_2=(), page_size=None,
                              sort_key=(), sort_dir=(), response_contents=None,
                              base_args=None, path=None, cmd_resources=None,
-                             parent_id=None):
+                             parent_id=None, output_format=None, query=""):
         self.mox.StubOutWithMock(cmd, "get_client")
         self.mox.StubOutWithMock(self.client.httpclient, "request")
         cmd.get_client().MultipleTimes().AndReturn(self.client)
@@ -318,7 +334,6 @@ class CLITestV20Base(base.BaseTestCase):
         self.client.format = self.format
         resstr = self.client.serialize(reses)
         # url method body
-        query = ""
         args = base_args if base_args is not None else []
         if detail:
             args.append('-D')
@@ -333,12 +348,12 @@ class CLITestV20Base(base.BaseTestCase):
             args.append("--tag")
         for tag in tags:
             args.append(tag)
-            if isinstance(tag, unicode):
-                tag = urllib.quote(tag.encode('utf-8'))
+            tag_query = urlparse.urlencode(
+                {'tag': encodeutils.safe_encode(tag)})
             if query:
-                query += "&tag=" + tag
+                query += "&" + tag_query
             else:
-                query = "tag=" + tag
+                query = tag_query
         if (not tags) and fields_2:
             args.append('--')
         if fields_2:
@@ -382,6 +397,9 @@ class CLITestV20Base(base.BaseTestCase):
             path = getattr(self.client, cmd_resources + "_path")
             if parent_id:
                 path = path % parent_id
+        if output_format:
+            args.append('-f')
+            args.append(output_format)
         self.client.httpclient.request(
             MyUrlComparator(end_url(path, query, format=self.format),
                             self.client),
@@ -400,8 +418,9 @@ class CLITestV20Base(base.BaseTestCase):
         return _str
 
     def _test_list_resources_with_pagination(self, resources, cmd,
+                                             base_args=None,
                                              cmd_resources=None,
-                                             parent_id=None):
+                                             parent_id=None, query=""):
         self.mox.StubOutWithMock(cmd, "get_client")
         self.mox.StubOutWithMock(self.client.httpclient, "request")
         cmd.get_client().MultipleTimes().AndReturn(self.client)
@@ -422,7 +441,7 @@ class CLITestV20Base(base.BaseTestCase):
         resstr1 = self.client.serialize(reses1)
         resstr2 = self.client.serialize(reses2)
         self.client.httpclient.request(
-            end_url(path, "", format=self.format), 'GET',
+            end_url(path, query, format=self.format), 'GET',
             body=None,
             headers=mox.ContainsKeyValue(
                 'X-Auth-Token', TOKEN)).AndReturn((MyResp(200), resstr1))
@@ -434,7 +453,8 @@ class CLITestV20Base(base.BaseTestCase):
                 'X-Auth-Token', TOKEN)).AndReturn((MyResp(200), resstr2))
         self.mox.ReplayAll()
         cmd_parser = cmd.get_parser("list_" + cmd_resources)
-        args = ['--request-format', self.format]
+        args = base_args if base_args is not None else []
+        args.extend(['--request-format', self.format])
         shell.run_command(cmd, cmd_parser, args)
         self.mox.VerifyAll()
         self.mox.UnsetStubs()
@@ -567,17 +587,16 @@ class ClientV2TestJson(CLITestV20Base):
         unicode_text = u'\u7f51\u7edc'
         # url with unicode
         action = u'/test'
-        expected_action = action.encode('utf-8')
+        expected_action = action
         # query string with unicode
         params = {'test': unicode_text}
-        expect_query = urllib.urlencode({'test':
-                                         unicode_text.encode('utf-8')})
+        expect_query = urlparse.urlencode(utils.safe_encode_dict(params))
         # request body with unicode
         body = params
         expect_body = self.client.serialize(body)
-        # headers with unicode
-        self.client.httpclient.auth_token = unicode_text
-        expected_auth_token = unicode_text.encode('utf-8')
+        self.client.httpclient.auth_token = encodeutils.safe_encode(
+            unicode_text)
+        expected_auth_token = encodeutils.safe_encode(unicode_text)
 
         self.client.httpclient.request(
             end_url(expected_action, query=expect_query, format=self.format),
@@ -599,7 +618,7 @@ class ClientV2TestJson(CLITestV20Base):
         self.client.format = self.format
         self.mox.StubOutWithMock(self.client.httpclient, "request")
         params = {'test': 'value'}
-        expect_query = urllib.urlencode(params)
+        expect_query = six.moves.urllib.parse.urlencode(params)
         self.client.httpclient.auth_token = 'token'
 
         self.client.httpclient.request(
@@ -617,6 +636,17 @@ class ClientV2TestJson(CLITestV20Base):
         self.mox.VerifyAll()
         self.mox.UnsetStubs()
 
+    def test_do_request_with_long_uri_exception(self):
+        long_string = 'x' * 8200                  # 8200 > MAX_URI_LEN:8192
+        params = {'id': long_string}
+
+        try:
+            self.client.do_request('GET', '/test', body='', params=params)
+        except exceptions.RequestURITooLong as cm:
+            self.assertNotEqual(cm.excess, 0)
+        else:
+            self.fail('Expected exception NOT raised')
+
 
 class ClientV2UnicodeTestXML(ClientV2TestJson):
     format = 'xml'
@@ -625,9 +655,9 @@ class ClientV2UnicodeTestXML(ClientV2TestJson):
 class CLITestV20ExceptionHandler(CLITestV20Base):
 
     def _test_exception_handler_v20(
-        self, expected_exception, status_code, expected_msg,
-        error_type=None, error_msg=None, error_detail=None,
-        error_content=None):
+            self, expected_exception, status_code, expected_msg,
+            error_type=None, error_msg=None, error_detail=None,
+            error_content=None):
         if error_content is None:
             error_content = {'NeutronError': {'type': error_type,
                                               'message': error_msg,
@@ -666,6 +696,8 @@ class CLITestV20ExceptionHandler(CLITestV20Base):
             ('ExternalIpAddressExhausted',
              exceptions.ExternalIpAddressExhaustedClient, 400),
             ('OverQuota', exceptions.OverQuotaClient, 409),
+            ('InvalidIpForNetwork', exceptions.InvalidIpForNetworkClient, 400),
+            ('InvalidIpForSubnet', exceptions.InvalidIpForSubnetClient, 400),
         ]
 
         error_msg = 'dummy exception message'

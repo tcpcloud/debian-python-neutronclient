@@ -16,11 +16,12 @@
 
 import argparse
 
+from oslo_serialization import jsonutils
+
 from neutronclient.common import exceptions
 from neutronclient.common import utils
+from neutronclient.i18n import _
 from neutronclient.neutron import v2_0 as neutronV20
-from neutronclient.openstack.common.gettextutils import _
-from neutronclient.openstack.common import jsonutils
 
 
 def _format_allocation_pools(subnet):
@@ -51,10 +52,11 @@ def add_updatable_arguments(parser):
     parser.add_argument(
         '--name',
         help=_('Name of this subnet.'))
-    parser.add_argument(
+    gateway_sg = parser.add_mutually_exclusive_group()
+    gateway_sg.add_argument(
         '--gateway', metavar='GATEWAY_IP',
         help=_('Gateway IP of this subnet.'))
-    parser.add_argument(
+    gateway_sg.add_argument(
         '--no-gateway',
         action='store_true',
         help=_('No distribution of gateway.'))
@@ -62,7 +64,7 @@ def add_updatable_arguments(parser):
         '--allocation-pool', metavar='start=IP_ADDR,end=IP_ADDR',
         action='append', dest='allocation_pools', type=utils.str2dict,
         help=_('Allocation pool IP addresses for this subnet '
-        '(This option can be repeated).'))
+               '(This option can be repeated).'))
     parser.add_argument(
         '--allocation_pool',
         action='append', dest='allocation_pools', type=utils.str2dict,
@@ -75,7 +77,7 @@ def add_updatable_arguments(parser):
         '--dns-nameserver', metavar='DNS_NAMESERVER',
         action='append', dest='dns_nameservers',
         help=_('DNS name server for this subnet '
-        '(This option can be repeated).'))
+               '(This option can be repeated).'))
     parser.add_argument(
         '--disable-dhcp',
         action='store_true',
@@ -84,28 +86,30 @@ def add_updatable_arguments(parser):
         '--enable-dhcp',
         action='store_true',
         help=_('Enable DHCP for this subnet.'))
+    # NOTE(ihrachys): yes, that's awful, but should be left as-is for
+    # backwards compatibility for versions <=2.3.4 that passed the
+    # boolean values through to the server without any argument
+    # validation.
     parser.add_argument(
-        '--ipv6-ra-mode',
-        choices=['dhcpv6-stateful', 'dhcpv6-stateless', 'slaac'],
-        help=_('IPv6 RA (Router Advertisement) mode.'))
+        '--enable-dhcp=True',
+        action='store_true',
+        dest='enable_dhcp',
+        help=argparse.SUPPRESS)
     parser.add_argument(
-        '--ipv6-address-mode',
-        choices=['dhcpv6-stateful', 'dhcpv6-stateless', 'slaac'],
-        help=_('IPv6 address mode.'))
+        '--enable-dhcp=False',
+        action='store_true',
+        dest='disable_dhcp',
+        help=argparse.SUPPRESS)
 
 
-def updatable_args2body(parsed_args, body):
-    if parsed_args.gateway and parsed_args.no_gateway:
-        raise exceptions.CommandError(_("--gateway option and "
-                                      "--no-gateway option can "
-                                      "not be used same time"))
+def updatable_args2body(parsed_args, body, for_create=True, ip_version=None):
     if parsed_args.disable_dhcp and parsed_args.enable_dhcp:
-        raise exceptions.CommandError(_("--enable-dhcp and --disable-dhcp can "
-                                      "not be used in the same command."))
+        raise exceptions.CommandError(_(
+            "You cannot enable and disable DHCP at the same time."))
 
     if parsed_args.no_gateway:
         body['subnet'].update({'gateway_ip': None})
-    if parsed_args.gateway:
+    elif parsed_args.gateway:
         body['subnet'].update({'gateway_ip': parsed_args.gateway})
     if parsed_args.name:
         body['subnet'].update({'name': parsed_args.name})
@@ -119,13 +123,13 @@ def updatable_args2body(parsed_args, body):
         body['subnet']['host_routes'] = parsed_args.host_routes
     if parsed_args.dns_nameservers:
         body['subnet']['dns_nameservers'] = parsed_args.dns_nameservers
-    if parsed_args.ipv6_ra_mode:
-        if parsed_args.ip_version == 4:
+    if for_create and parsed_args.ipv6_ra_mode:
+        if ip_version == 4:
             raise exceptions.CommandError(_("--ipv6-ra-mode is invalid "
                                             "when --ip-version is 4"))
         body['subnet']['ipv6_ra_mode'] = parsed_args.ipv6_ra_mode
-    if parsed_args.ipv6_address_mode:
-        if parsed_args.ip_version == 4:
+    if for_create and parsed_args.ipv6_address_mode:
+        if ip_version == 4:
             raise exceptions.CommandError(_("--ipv6-address-mode is "
                                             "invalid when --ip-version "
                                             "is 4"))
@@ -161,7 +165,10 @@ class CreateSubnet(neutronV20.CreateCommand):
             '--ip-version',
             type=int,
             default=4, choices=[4, 6],
-            help=_('IP version to use, default is 4.'))
+            help=_('IP version to use, default is 4. '
+                   'Note that when subnetpool is specified, '
+                   'IP version is determined from the subnetpool '
+                   'and this option is ignored.'))
         parser.add_argument(
             '--ip_version',
             type=int,
@@ -171,22 +178,62 @@ class CreateSubnet(neutronV20.CreateCommand):
             'network_id', metavar='NETWORK',
             help=_('Network ID or name this subnet belongs to.'))
         parser.add_argument(
-            'cidr', metavar='CIDR',
+            'cidr', nargs='?', metavar='CIDR',
             help=_('CIDR of subnet to create.'))
+        parser.add_argument(
+            '--ipv6-ra-mode',
+            choices=['dhcpv6-stateful', 'dhcpv6-stateless', 'slaac'],
+            help=_('IPv6 RA (Router Advertisement) mode.'))
+        parser.add_argument(
+            '--ipv6-address-mode',
+            choices=['dhcpv6-stateful', 'dhcpv6-stateless', 'slaac'],
+            help=_('IPv6 address mode.'))
+        parser.add_argument(
+            '--subnetpool', metavar='SUBNETPOOL',
+            help=_('ID or name of subnetpool from which this subnet '
+                   'will obtain a CIDR.'))
+        parser.add_argument(
+            '--prefixlen', metavar='PREFIX_LENGTH',
+            help=_('Prefix length for subnet allocation from subnetpool.'))
 
     def args2body(self, parsed_args):
-        if parsed_args.ip_version == 4 and parsed_args.cidr.endswith('/32'):
-            self.log.warning(_("An IPv4 subnet with a /32 CIDR will have "
-                               "only one usable IP address so the device "
-                               "attached to it will not have any IP "
-                               "connectivity."))
         _network_id = neutronV20.find_resourceid_by_name_or_id(
             self.get_client(), 'network', parsed_args.network_id)
-        body = {'subnet': {'cidr': parsed_args.cidr,
-                           'network_id': _network_id,
-                           'ip_version': parsed_args.ip_version, }, }
+        body = {'subnet': {'network_id': _network_id}}
 
-        updatable_args2body(parsed_args, body)
+        if parsed_args.prefixlen:
+            body['subnet'].update({'prefixlen': parsed_args.prefixlen})
+        ip_version = parsed_args.ip_version
+        if parsed_args.subnetpool:
+            if parsed_args.subnetpool == 'None':
+                _subnetpool_id = None
+            else:
+                _subnetpool = neutronV20.find_resource_by_name_or_id(
+                    self.get_client(), 'subnetpool', parsed_args.subnetpool)
+                _subnetpool_id = _subnetpool['id']
+                # Now that we have the pool_id - let's just have a check on the
+                # ip version used in the pool
+                ip_version = _subnetpool['ip_version']
+            body['subnet'].update({'subnetpool_id': _subnetpool_id})
+
+        # IP version needs to be set as IP version can be
+        # determined by subnetpool.
+        body['subnet']['ip_version'] = ip_version
+
+        if parsed_args.cidr:
+            # With subnetpool, cidr is now optional for creating subnet.
+            cidr = parsed_args.cidr
+            body['subnet'].update({'cidr': cidr})
+            unusable_cidr = '/32' if ip_version == 4 else '/128'
+            if cidr.endswith(unusable_cidr):
+                self.log.warning(_("An IPv%(ip)d subnet with a %(cidr)s CIDR "
+                                   "will have only one usable IP address so "
+                                   "the device attached to it will not have "
+                                   "any IP connectivity.")
+                                 % {"ip": ip_version,
+                                    "cidr": unusable_cidr})
+
+        updatable_args2body(parsed_args, body, ip_version=ip_version)
         if parsed_args.tenant_id:
             body['subnet'].update({'tenant_id': parsed_args.tenant_id})
 
@@ -209,5 +256,5 @@ class UpdateSubnet(neutronV20.UpdateCommand):
 
     def args2body(self, parsed_args):
         body = {'subnet': {}}
-        updatable_args2body(parsed_args, body)
+        updatable_args2body(parsed_args, body, for_create=False)
         return body

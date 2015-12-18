@@ -13,13 +13,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
-# @author: Swaminathan Vasudevan, Hewlett-Packard.
-#
 
 from neutronclient.common import utils
+from neutronclient.i18n import _
 from neutronclient.neutron import v2_0 as neutronv20
 from neutronclient.neutron.v2_0.vpn import utils as vpn_utils
-from neutronclient.openstack.common.gettextutils import _
 
 
 class ListIKEPolicy(neutronv20.ListCommand):
