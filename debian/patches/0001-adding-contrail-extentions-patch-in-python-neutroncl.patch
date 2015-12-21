@@ -5,11 +5,7 @@ Subject: adding contrail-extentions patch in python-neutronclient for
 
 Conflicts:
 	neutronclient/shell.py
-	resolved by removing gettextutils and strutils (same as
-	openstack/master)
-
-Conflicts:
-	neutronclient/shell.py
+	resolved by removing nec-packet-filter* (same as openstack/master)
 ---
  neutronclient/neutron/v2_0/ipam.py          |  63 ++++++++++++
  neutronclient/neutron/v2_0/policy.py        |  61 ++++++++++++
@@ -287,23 +283,23 @@ index 0000000..9c049f2
 +    resource = 'nat_instance'
 +    allow_names = True
 diff --git a/neutronclient/shell.py b/neutronclient/shell.py
-index fa73329..656c28f 100644
+index 9dbc69d..f6c772e 100644
 --- a/neutronclient/shell.py
 +++ b/neutronclient/shell.py
-@@ -68,6 +68,9 @@ from neutronclient.neutron.v2_0.vpn import ikepolicy
+@@ -85,6 +85,9 @@ from neutronclient.neutron.v2_0.vpn import ikepolicy
  from neutronclient.neutron.v2_0.vpn import ipsec_site_connection
  from neutronclient.neutron.v2_0.vpn import ipsecpolicy
  from neutronclient.neutron.v2_0.vpn import vpnservice
 +from neutronclient.neutron.v2_0 import ipam
 +from neutronclient.neutron.v2_0 import policy
 +from neutronclient.neutron.v2_0 import vpcroutetable
- from neutronclient.openstack.common.gettextutils import _
- from neutronclient.openstack.common import strutils
  from neutronclient.version import __version__
-@@ -295,6 +298,24 @@ COMMAND_V2 = {
-     'nec-packet-filter-create': packetfilter.CreatePacketFilter,
-     'nec-packet-filter-update': packetfilter.UpdatePacketFilter,
-     'nec-packet-filter-delete': packetfilter.DeletePacketFilter,
+ 
+ 
+@@ -390,6 +393,24 @@ COMMAND_V2 = {
+         bandwidth_limit_rule.DeleteQoSBandwidthLimitRule
+     ),
+     'qos-available-rule-types': qos_rule.ListQoSRuleTypes,
 +    'ipam-list': ipam.ListIpam,
 +    'ipam-show': ipam.ShowIpam,
 +    'ipam-create': ipam.CreateIpam,
@@ -326,10 +322,10 @@ index fa73329..656c28f 100644
  
  COMMANDS = {'2.0': COMMAND_V2}
 diff --git a/neutronclient/v2_0/client.py b/neutronclient/v2_0/client.py
-index eb84125..dec3e1f 100644
+index ce6a8b1..c5e18e9 100644
 --- a/neutronclient/v2_0/client.py
 +++ b/neutronclient/v2_0/client.py
-@@ -163,6 +163,14 @@ class Client(object):
+@@ -351,6 +351,14 @@ class Client(ClientBase):
      router_path = "/routers/%s"
      floatingips_path = "/floatingips"
      floatingip_path = "/floatingips/%s"
@@ -344,7 +340,7 @@ index eb84125..dec3e1f 100644
      security_groups_path = "/security-groups"
      security_group_path = "/security-groups/%s"
      security_group_rules_path = "/security-group-rules"
-@@ -464,6 +472,145 @@ class Client(object):
+@@ -751,6 +759,145 @@ class Client(ClientBase):
          return self.delete(self.floatingip_path % (floatingip))
  
      @APIParamsCall
